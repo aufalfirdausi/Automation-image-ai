@@ -3,8 +3,14 @@ import cors from "cors";
 import { config } from "./config/env.js";
 import apiRouter from "./routes/index.js";
 import { errorMiddleware } from "./middleware/error.middleware.js";
+import { registerCoreNodes, registerAINodes, registerToolNodes } from "./nodes/index.js";
 
 export function createServer(): Application {
+  // Ensure core utility, AI, and safety tool nodes are initialized in defaultNodeRegistry
+  registerCoreNodes();
+  registerAINodes();
+  registerToolNodes();
+
   const app = express();
 
   // Basic middleware

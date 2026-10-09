@@ -19,6 +19,13 @@ export function getDatabasePool(): Pool {
   return pool;
 }
 
+export async function closeDatabasePool(): Promise<void> {
+  if (pool) {
+    await pool.end();
+    pool = null;
+  }
+}
+
 export interface DatabaseStatus {
   connected: boolean;
   message: string;
