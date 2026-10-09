@@ -22,6 +22,8 @@ export class GeminiProvider implements AIProvider {
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), options.timeoutMs || 60000);
+    const abortFromWorkflow = () => controller.abort();
+    options.signal?.addEventListener("abort", abortFromWorkflow, { once: true });
 
     const body: Record<string, unknown> = {
       contents: [{ role: "user", parts: [{ text: options.prompt }] }],
@@ -78,6 +80,7 @@ export class GeminiProvider implements AIProvider {
       );
     } finally {
       clearTimeout(timeout);
+      options.signal?.removeEventListener("abort", abortFromWorkflow);
     }
   }
 
@@ -93,6 +96,8 @@ export class GeminiProvider implements AIProvider {
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), options.timeoutMs || 60000);
+    const abortFromWorkflow = () => controller.abort();
+    options.signal?.addEventListener("abort", abortFromWorkflow, { once: true });
 
     const generationConfig: Record<string, unknown> = {
       responseMimeType: "application/json",
@@ -157,6 +162,7 @@ export class GeminiProvider implements AIProvider {
       );
     } finally {
       clearTimeout(timeout);
+      options.signal?.removeEventListener("abort", abortFromWorkflow);
     }
   }
 }

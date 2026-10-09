@@ -2,15 +2,11 @@
 
 A local personal AI workflow automation platform inspired by workflow automation tools such as n8n. The system is designed to run locally, allowing visual creation of workflows, node connection and configuration, local execution, execution history inspection, and AI provider integration.
 
-## Phase 1 Foundation Scope
+## Current Scope
 
-The current implementation establishes the Phase 1 project foundation:
-- Clean modular repository structure separating `frontend/`, `backend/`, and `docs/`.
-- Node.js + TypeScript backend foundation with health check endpoint (`/api/health`) and resilient MySQL connection pool.
-- Next.js + React + TypeScript frontend foundation with a minimal dashboard placeholder and backend API connectivity.
-- Architecture and decision documentation as the single source of truth under `docs/`.
+The project includes a visual React Flow workflow editor, a deterministic DAG execution engine, MySQL-backed workflow/run persistence, execution history, schedules, inbound webhooks, Gemini and Ollama provider integrations, output guardrails, and controlled HTTP requests.
 
-*Note: In accordance with Phase 1 constraints, visual workflow editing (React Flow), workflow execution engine, scheduler, authentication, Redis, queues, and AI provider integrations are planned for future phases.*
+The detailed implementation status and phase history are maintained in [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md).
 
 ---
 

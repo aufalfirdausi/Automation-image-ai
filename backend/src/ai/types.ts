@@ -19,6 +19,7 @@ export interface GenerateTextOptions {
   maxTokens?: number;
   model?: string;
   timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 export interface GenerateTextResult {

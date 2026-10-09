@@ -92,6 +92,7 @@ export const aiTextGenerationNodeDefinition: NodeDefinition<
         model: config.model,
         systemInstruction: config.systemInstruction,
         temperature: config.temperature,
+        signal: params.signal,
       });
 
       return {
@@ -191,6 +192,7 @@ export const aiStructuredOutputNodeDefinition: NodeDefinition<
         systemInstruction: config.systemInstruction,
         responseSchema: config.responseSchema,
         temperature: config.temperature,
+        signal: params.signal,
       });
 
       return {

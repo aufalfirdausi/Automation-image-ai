@@ -57,6 +57,15 @@ export interface StartRunParams {
 
 export type RunDetailDto = RunDto & { events: RunEventDto[] };
 
+function isDuplicateIdempotencyError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "ER_DUP_ENTRY"
+  );
+}
+
 export class ExecutionService {
   private workflowRepo: WorkflowRepository;
   private runRepo: RunRepository;
@@ -127,14 +136,27 @@ export class ExecutionService {
 
     // 6. Generate Unique Run ID & Persist Initial Run Record
     const runId = `run_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    await this.runRepo.createRun({
-      id: runId,
-      workflowId: workflowRecord.id,
-      workflowVersion: workflowRecord.version,
-      workflowSnapshot: snapshot,
-      triggerType,
-      idempotencyKey: idempotencyKey?.trim() || null,
-    });
+    try {
+      await this.runRepo.createRun({
+        id: runId,
+        workflowId: workflowRecord.id,
+        workflowVersion: workflowRecord.version,
+        workflowSnapshot: snapshot,
+        triggerType,
+        idempotencyKey: idempotencyKey?.trim() || null,
+      });
+    } catch (error) {
+      if (idempotencyKey && isDuplicateIdempotencyError(error)) {
+        const existing = await this.runRepo.getRunByIdempotencyKey(workflowId, idempotencyKey.trim());
+        if (existing) {
+          return {
+            run: this.runRepo.toDto(existing),
+            idempotentReplay: true,
+          };
+        }
+      }
+      throw error;
+    }
 
     // 7. Transition to 'running'
     const startedAt = new Date().toISOString();

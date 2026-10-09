@@ -21,6 +21,8 @@ export interface NodeExecutionParams<
   readonly config: TConfig;
   readonly input: TInput;
   readonly context: ExecutionContext;
+  /** Signals that the workflow was cancelled or exceeded its execution deadline. */
+  readonly signal?: AbortSignal;
 }
 
 /**

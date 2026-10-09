@@ -116,12 +116,14 @@ describe("Phase 5.4: Execution Reliability (Timeout, Cancellation, Retry)", () =
       },
     };
 
+    const startedAt = Date.now();
     const summary = await executeWorkflow(workflow, handlers, { timeoutMs: 30 });
 
     assert.equal(summary.status, "failed");
     assert.equal(summary.error?.code, "EXECUTION_TIMEOUT");
-    assert.equal(summary.nodeStates["step1"], "completed");
-    assert.equal(summary.nodeStates["step2"], "ready");
+    assert.equal(summary.nodeStates["step1"], "failed");
+    assert.equal(summary.nodeStates["step2"], "pending");
+    assert.ok(Date.now() - startedAt < 55, "workflow should return before the slow handler finishes");
   });
 
   it("cooperatively aborts execution with EXECUTION_ABORTED when AbortSignal is triggered", async () => {
@@ -157,7 +159,7 @@ describe("Phase 5.4: Execution Reliability (Timeout, Cancellation, Retry)", () =
 
     assert.equal(summary.status, "failed");
     assert.equal(summary.error?.code, "EXECUTION_ABORTED");
-    assert.equal(summary.nodeStates["step2"], "ready");
+    assert.equal(summary.nodeStates["step2"], "pending");
   });
 
   it("retries failed node according to RetryPolicy and succeeds on subsequent attempt", async () => {

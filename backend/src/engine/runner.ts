@@ -2,7 +2,13 @@ import type { Workflow, WorkflowNode, WorkflowEdge } from "./types.js";
 import { validateWorkflow } from "./validate-workflow.js";
 import { createExecutionContext, recordNodeOutput } from "./context.js";
 import { executeNode } from "./execute-node.js";
-import type { NodeExecutionParams, NodeExecutionError, ExecutionContext } from "./execution-types.js";
+import type {
+  NodeExecutionParams,
+  NodeExecutionError,
+  NodeExecutionResult,
+  NodeHandler,
+  ExecutionContext,
+} from "./execution-types.js";
 import {
   type NodeExecutionStatus,
   type EdgeResolutionStatus,
@@ -148,28 +154,64 @@ export async function executeWorkflow(
   let workflowFailed = false;
   let workflowError: NodeExecutionError | undefined;
 
-  const executionStartTime = Date.now();
+  const workflowAbortController = new AbortController();
+  let abortReason: "cancelled" | "timeout" | null = null;
+
+  const abortForCancellation = () => {
+    abortReason = "cancelled";
+    workflowAbortController.abort();
+  };
+
+  if (options?.signal?.aborted) {
+    abortForCancellation();
+  } else {
+    options?.signal?.addEventListener("abort", abortForCancellation, { once: true });
+  }
+
+  const timeoutTimer = options?.timeoutMs && options.timeoutMs > 0
+    ? setTimeout(() => {
+        abortReason = "timeout";
+        workflowAbortController.abort();
+      }, options.timeoutMs)
+    : undefined;
+
+  const getAbortError = (): NodeExecutionError => ({
+    message:
+      abortReason === "timeout"
+        ? `Workflow execution timed out after ${options?.timeoutMs}ms`
+        : "Workflow execution cancelled",
+    code: abortReason === "timeout" ? "EXECUTION_TIMEOUT" : "EXECUTION_ABORTED",
+  });
+
+  async function executeNodeWithAbort(
+    handler: NodeHandler,
+    params: NodeExecutionParams
+  ): Promise<NodeExecutionResult> {
+    if (workflowAbortController.signal.aborted) {
+      return { success: false as const, error: getAbortError() };
+    }
+
+    let onAbort: (() => void) | undefined;
+    const aborted = new Promise<NodeExecutionResult>((resolve) => {
+      onAbort = () => resolve({ success: false, error: getAbortError() });
+      workflowAbortController.signal.addEventListener("abort", onAbort, { once: true });
+    });
+
+    try {
+      return await Promise.race([executeNode(handler, params), aborted]);
+    } finally {
+      if (onAbort) {
+        workflowAbortController.signal.removeEventListener("abort", onAbort);
+      }
+    }
+  }
 
   // 5. Sequential deterministic execution loop
   while (readyQueue.length > 0) {
     // Check cooperative cancellation signal
-    if (options?.signal?.aborted) {
+    if (workflowAbortController.signal.aborted) {
       workflowFailed = true;
-      workflowError = {
-        message: "Workflow execution cancelled",
-        code: "EXECUTION_ABORTED",
-      };
-      readyQueue.length = 0;
-      break;
-    }
-
-    // Check execution timeout
-    if (options?.timeoutMs && options.timeoutMs > 0 && Date.now() - executionStartTime > options.timeoutMs) {
-      workflowFailed = true;
-      workflowError = {
-        message: `Workflow execution timed out after ${options.timeoutMs}ms`,
-        code: "EXECUTION_TIMEOUT",
-      };
+      workflowError = getAbortError();
       readyQueue.length = 0;
       break;
     }
@@ -246,23 +288,24 @@ export async function executeWorkflow(
       config: currentNode.config,
       input: nodeInput,
       context,
+      signal: workflowAbortController.signal,
     };
 
-    let result = await executeNode(handler, executionParams);
+    let result = await executeNodeWithAbort(handler, executionParams);
 
     // Apply retry policy if configured and execution failed
-    if (!result.success && options?.retryPolicy && options.retryPolicy.maxRetries > 0) {
+    if (!result.success && !workflowAbortController.signal.aborted && options?.retryPolicy && options.retryPolicy.maxRetries > 0) {
       const retryableCodes = options.retryPolicy.retryableCodes;
       const errorCode = result.error?.code;
       const isRetryable = !retryableCodes || (errorCode && retryableCodes.includes(errorCode));
 
       if (isRetryable) {
         for (let attempt = 1; attempt <= options.retryPolicy.maxRetries; attempt++) {
-          if (options?.signal?.aborted) break;
+          if (workflowAbortController.signal.aborted) break;
           if (options.retryPolicy.backoffMs && options.retryPolicy.backoffMs > 0) {
             await new Promise((resolve) => setTimeout(resolve, options.retryPolicy!.backoffMs));
           }
-          result = await executeNode(handler, executionParams);
+          result = await executeNodeWithAbort(handler, executionParams);
           if (result.success) break;
         }
       }
@@ -325,6 +368,11 @@ export async function executeWorkflow(
       checkTargetNode(outEdge.target);
     }
   }
+
+  if (timeoutTimer) {
+    clearTimeout(timeoutTimer);
+  }
+  options?.signal?.removeEventListener("abort", abortForCancellation);
 
   // 6. Assemble frozen summary
   const finalNodeStates: Record<string, NodeExecutionStatus> = {};

@@ -16,6 +16,8 @@ export class OllamaProvider implements AIProvider {
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), options.timeoutMs || 60000);
+    const abortFromWorkflow = () => controller.abort();
+    options.signal?.addEventListener("abort", abortFromWorkflow, { once: true });
 
     try {
       const response = await fetch(url, {
@@ -66,6 +68,7 @@ export class OllamaProvider implements AIProvider {
       );
     } finally {
       clearTimeout(timeout);
+      options.signal?.removeEventListener("abort", abortFromWorkflow);
     }
   }
 
@@ -77,6 +80,8 @@ export class OllamaProvider implements AIProvider {
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), options.timeoutMs || 60000);
+    const abortFromWorkflow = () => controller.abort();
+    options.signal?.addEventListener("abort", abortFromWorkflow, { once: true });
 
     try {
       const response = await fetch(url, {
@@ -129,6 +134,7 @@ export class OllamaProvider implements AIProvider {
       );
     } finally {
       clearTimeout(timeout);
+      options.signal?.removeEventListener("abort", abortFromWorkflow);
     }
   }
 }

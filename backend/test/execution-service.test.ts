@@ -114,6 +114,25 @@ class InMemoryRunEventRepository extends RunEventRepository {
   }
 }
 
+class ConcurrentIdempotencyRunRepository extends RunRepository {
+  private lookupCount = 0;
+  private readonly existingRun: RunRecord;
+
+  constructor(existingRun: RunRecord) {
+    super();
+    this.existingRun = existingRun;
+  }
+
+  override async getRunByIdempotencyKey(): Promise<RunRecord | null> {
+    this.lookupCount++;
+    return this.lookupCount === 1 ? null : this.existingRun;
+  }
+
+  override async createRun(): Promise<RunRecord> {
+    throw Object.assign(new Error("Duplicate idempotency key"), { code: "ER_DUP_ENTRY" });
+  }
+}
+
 describe("Phase 5.1: ExecutionService Unit & Gate Tests", () => {
   let workflowRepo: InMemoryWorkflowRepository;
   let runRepo: InMemoryRunRepository;
@@ -335,6 +354,52 @@ describe("Phase 5.1: ExecutionService Unit & Gate Tests", () => {
     });
     assert.strictEqual(secondRun.idempotentReplay, true);
     assert.strictEqual(secondRun.run.id, firstRun.run.id);
+  });
+
+  it("7a. Returns the existing run when a concurrent idempotency insert conflicts", async () => {
+    const workflow: Workflow = {
+      id: "wf-idem-race",
+      name: "Concurrent Idempotency Pipeline",
+      nodes: [{ id: "val", type: "static_value", config: { value: "test" } }],
+      edges: [],
+    };
+    workflowRepo.setWorkflow({
+      id: workflow.id,
+      name: workflow.name,
+      description: null,
+      graph_definition: workflow,
+      version: 1,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    const existingRun: RunRecord = {
+      id: "run_existing",
+      workflow_id: workflow.id,
+      workflow_version: 1,
+      workflow_snapshot: workflow,
+      status: "running",
+      trigger_type: "api",
+      idempotency_key: "same-key",
+      error: null,
+      created_at: new Date().toISOString(),
+      started_at: new Date().toISOString(),
+      finished_at: null,
+    };
+    service = new ExecutionService(
+      workflowRepo,
+      new ConcurrentIdempotencyRunRepository(existingRun),
+      runEventRepo
+    );
+
+    const result = await service.startRun({
+      workflowId: workflow.id,
+      idempotencyKey: "same-key",
+      triggerType: "api",
+    });
+
+    assert.equal(result.idempotentReplay, true);
+    assert.equal(result.run.id, existingRun.id);
   });
 
   it("8. Successfully executes visual editor workflow (manual_trigger -> condition -> action)", async () => {

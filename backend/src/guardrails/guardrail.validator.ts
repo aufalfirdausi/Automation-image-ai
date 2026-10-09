@@ -7,7 +7,7 @@ import type {
 // Standard safety blocklist against malicious prompt injections and arbitrary code patterns
 const DEFAULT_BLOCKED_PATTERNS = [
   /eval\s*\(/i,
-  /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,
+  /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/i,
   /\b(exec|spawn|fork)\s*\(/i,
   /\b(chmod|chown|rm\s+-rf)\b/i,
 ];

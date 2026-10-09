@@ -33,6 +33,13 @@ describe("Phase 8: AI Automation, Guardrails & Controlled Tools Tests", () => {
       }
     });
 
+    it("blocks repeated script payloads without retaining regex state", () => {
+      const payload = "<script>window.location='http://evil.com'</script>";
+
+      assert.equal(GuardrailValidator.validate(payload).isValid, false);
+      assert.equal(GuardrailValidator.validate(payload).isValid, false);
+    });
+
     it("enforces schema required fields and type boundaries", () => {
       const invalidData = { name: "Product A", price: "one hundred" };
       const rules = {
@@ -132,6 +139,9 @@ describe("Phase 8: AI Automation, Guardrails & Controlled Tools Tests", () => {
         "http://localhost:3000/internal",
         "http://169.254.169.254/latest/meta-data/",
         "http://10.0.0.5/secrets",
+        "http://172.16.0.5/secrets",
+        "http://172.31.255.255/secrets",
+        "http://192.168.1.5/secrets",
       ];
 
       for (const url of prohibitedUrls) {
@@ -244,6 +254,24 @@ describe("Phase 8: AI Automation, Guardrails & Controlled Tools Tests", () => {
       assert.equal(summary.status, "completed");
       assert.equal(summary.nodeStates["publish_step"], "skipped");
       assert.equal(summary.nodeStates["audit_step"], "completed");
+    });
+
+    it("fails closed when no boolean approval decision is supplied", async () => {
+      for (const value of [undefined, { approved: "true" }]) {
+        const workflow: Workflow = {
+          id: "wf_missing_approval",
+          name: "Missing Approval Decision",
+          nodes: [
+            { id: "input", type: "static_value", config: { value } },
+            { id: "gate_node", type: "human_approval_gate", config: {} },
+          ],
+          edges: [{ source: "input", target: "gate_node" }],
+        };
+
+        const summary = await executeWorkflow(workflow, defaultNodeRegistry.toHandlerProvider());
+        assert.equal(summary.status, "failed");
+        assert.equal(summary.error?.code, "APPROVAL_DECISION_REQUIRED");
+      }
     });
   });
 });

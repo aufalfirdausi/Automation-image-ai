@@ -1,4 +1,6 @@
 import type { NodeDefinition } from "../types.js";
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import { defaultNodeRegistry } from "../registry.js";
 import { GuardrailValidator } from "../../guardrails/guardrail.validator.js";
 import type { GuardrailRuleConfig } from "../../guardrails/types.js";
@@ -86,7 +88,6 @@ export interface ControlledHttpConfig {
   url: string;
   method?: "GET" | "POST";
   headers?: Record<string, string>;
-  allowLocalNetwork?: boolean;
   timeoutMs?: number;
 }
 
@@ -97,6 +98,47 @@ const SSRF_DISALLOWED_HOSTS = [
   "169.254.169.254", // AWS/GCP metadata
   "metadata.google.internal",
 ];
+
+function isPrivateIpAddress(address: string): boolean {
+  const normalized = address.toLowerCase();
+  if (isIP(normalized) === 4) {
+    const [first, second] = normalized.split(".").map(Number);
+    return (
+      first === 0 ||
+      first === 10 ||
+      first === 127 ||
+      first >= 224 ||
+      (first === 169 && second === 254) ||
+      (first === 172 && second >= 16 && second <= 31) ||
+      (first === 192 && second === 168)
+    );
+  }
+
+  return (
+    normalized === "::" ||
+    normalized === "::1" ||
+    normalized.startsWith("fc") ||
+    normalized.startsWith("fd") ||
+    normalized.startsWith("fe80:") ||
+    normalized.startsWith("::ffff:127.") ||
+    normalized.startsWith("::ffff:10.") ||
+    normalized.startsWith("::ffff:192.168.") ||
+    normalized.startsWith("::ffff:172.")
+  );
+}
+
+async function isProhibitedRequestTarget(hostname: string): Promise<boolean> {
+  if (SSRF_DISALLOWED_HOSTS.includes(hostname) || isPrivateIpAddress(hostname)) {
+    return true;
+  }
+
+  try {
+    const addresses = await lookup(hostname, { all: true, verbatim: true });
+    return addresses.length === 0 || addresses.some(({ address }) => isPrivateIpAddress(address));
+  } catch {
+    return true;
+  }
+}
 
 export const controlledHttpRequestNodeDefinition: NodeDefinition<
   ControlledHttpConfig,
@@ -163,24 +205,20 @@ export const controlledHttpRequestNodeDefinition: NodeDefinition<
       }
 
       const hostname = parsedUrl.hostname.toLowerCase();
-      if (!params.config.allowLocalNetwork) {
-        if (
-          SSRF_DISALLOWED_HOSTS.includes(hostname) ||
-          hostname.startsWith("10.") ||
-          hostname.startsWith("192.168.")
-        ) {
-          return {
-            success: false,
-            error: {
-              code: "SSRF_PROHIBITED_HOST",
-              message: `Access to private/local network address '${hostname}' is prohibited.`,
-            },
-          };
-        }
+      if (await isProhibitedRequestTarget(hostname)) {
+        return {
+          success: false,
+          error: {
+            code: "SSRF_PROHIBITED_HOST",
+            message: `Access to private/local network address '${hostname}' is prohibited.`,
+          },
+        };
       }
 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), params.config.timeoutMs || 10000);
+      const abortFromWorkflow = () => controller.abort();
+      params.signal?.addEventListener("abort", abortFromWorkflow, { once: true });
 
       try {
         const method = params.config.method || "POST";
@@ -194,6 +232,7 @@ export const controlledHttpRequestNodeDefinition: NodeDefinition<
           },
           body: hasBody ? (typeof params.input === "string" ? params.input : JSON.stringify(params.input)) : undefined,
           signal: controller.signal,
+          redirect: "manual",
         });
 
         const status = response.status;
@@ -206,6 +245,15 @@ export const controlledHttpRequestNodeDefinition: NodeDefinition<
         }
 
         if (!response.ok) {
+          if (response.status >= 300 && response.status < 400) {
+            return {
+              success: false,
+              error: {
+                code: "REDIRECT_NOT_ALLOWED",
+                message: "HTTP redirects are not allowed for controlled requests.",
+              },
+            };
+          }
           return {
             success: false,
             error: {
@@ -231,6 +279,7 @@ export const controlledHttpRequestNodeDefinition: NodeDefinition<
         };
       } finally {
         clearTimeout(timeout);
+        params.signal?.removeEventListener("abort", abortFromWorkflow);
       }
     },
   },
@@ -239,43 +288,43 @@ export const controlledHttpRequestNodeDefinition: NodeDefinition<
 /**
  * 3. HumanApprovalGateNode: Human-in-the-loop decision routing.
  */
-export interface HumanApprovalConfig {
-  approvedByDefault?: boolean;
-}
-
 export const humanApprovalGateNodeDefinition: NodeDefinition<
-  HumanApprovalConfig,
+  Record<string, unknown>,
   { approved?: boolean; payload?: unknown } | unknown,
   unknown
 > = {
   manifest: {
     type: "human_approval_gate",
-    name: "Human Approval Gate",
+    name: "Explicit Approval Gate",
     version: "1.0.0",
-    description: "Human-in-the-loop validation gate. Routes to 'approved' or 'rejected' branch.",
+    description: "Routes an explicitly supplied approval decision to the approved or rejected branch.",
     category: "logic",
     inputs: [{ id: "input", label: "Payload to Approve" }],
     outputs: [
       { id: "approved", label: "Approved Branch" },
       { id: "rejected", label: "Rejected Branch" },
     ],
-    configFields: [
-      {
-        name: "approvedByDefault",
-        label: "Approved by Default",
-        type: "boolean",
-        required: false,
-        defaultValue: false,
-      },
-    ],
+    configFields: [],
   },
   handler: {
     async execute(params) {
-      let isApproved = Boolean(params.config?.approvedByDefault);
-
-      if (params.input && typeof params.input === "object" && "approved" in (params.input as Record<string, unknown>)) {
-        isApproved = Boolean((params.input as any).approved);
+      const approvalInput = params.input as { approved?: unknown } | null;
+      if (
+        !approvalInput ||
+        typeof approvalInput !== "object" ||
+        !Object.prototype.hasOwnProperty.call(approvalInput, "approved") ||
+        typeof approvalInput.approved !== "boolean"
+      ) {
+        return {
+          success: false,
+          error: {
+            code: "APPROVAL_DECISION_REQUIRED",
+            message: "Approval input must contain an explicit boolean 'approved' decision.",
+          },
+        };
       }
+
+      const isApproved = approvalInput.approved;
 
       const branch = isApproved ? "approved" : "rejected";
       return {
