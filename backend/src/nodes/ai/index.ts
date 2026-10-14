@@ -2,24 +2,31 @@ import type { NodeDefinition } from "../types.js";
 import { defaultNodeRegistry } from "../registry.js";
 import { getAIProvider, type AIProvider } from "../../ai/index.js";
 
+import { aiImageGenerationNodeDefinition } from "./image/index.js";
 export interface AITextGenerationConfig {
-  provider?: "default" | "gemini" | "ollama";
+  provider?: "default" | "gemini";
   model?: string;
   promptTemplate?: string;
   systemInstruction?: string;
   temperature?: number;
+  enableSearch?: boolean;
+}
+
+export interface AITextGenerationOutput {
+  text: string;
+  groundingChunks: Array<{ title?: string; uri: string }>;
 }
 
 export const aiTextGenerationNodeDefinition: NodeDefinition<
   AITextGenerationConfig,
   unknown,
-  string
+  AITextGenerationOutput
 > = {
   manifest: {
     type: "ai_generate_text",
     name: "AI Text Generation",
     version: "1.0.0",
-    description: "Generates natural text using Gemini or Ollama AI providers.",
+    description: "Generates natural text using Gemini.",
     category: "ai",
     inputs: [{ id: "prompt", label: "Prompt / Context Input" }],
     outputs: [{ id: "text", label: "Generated Text Output" }],
@@ -33,7 +40,6 @@ export const aiTextGenerationNodeDefinition: NodeDefinition<
         options: [
           { label: "Default Configured", value: "default" },
           { label: "Google Gemini", value: "gemini" },
-          { label: "Local Ollama", value: "ollama" },
         ],
       },
       {
@@ -41,7 +47,7 @@ export const aiTextGenerationNodeDefinition: NodeDefinition<
         label: "Model Name",
         type: "string",
         required: false,
-        description: "Custom model override (e.g. gemini-1.5-flash or llama3.2).",
+        description: "Custom model override (e.g. gemini-3.5-flash).",
       },
       {
         name: "promptTemplate",
@@ -55,6 +61,13 @@ export const aiTextGenerationNodeDefinition: NodeDefinition<
         label: "System Instruction",
         type: "string",
         required: false,
+      },
+      {
+        name: "enableSearch",
+        label: "Google Search Grounding",
+        type: "boolean",
+        required: false,
+        description: "Enables Google Search Grounding for up-to-date web facts.",
       },
     ],
   },
@@ -92,19 +105,23 @@ export const aiTextGenerationNodeDefinition: NodeDefinition<
         model: config.model,
         systemInstruction: config.systemInstruction,
         temperature: config.temperature,
+        enableSearch: Boolean(config.enableSearch),
         signal: params.signal,
       });
 
       return {
         success: true,
-        output: result.text,
+        output: {
+          text: result.text,
+          groundingChunks: result.groundingChunks || [],
+        },
       };
     },
   },
 };
 
 export interface AIStructuredOutputConfig {
-  provider?: "default" | "gemini" | "ollama";
+  provider?: "default" | "gemini";
   model?: string;
   promptTemplate?: string;
   systemInstruction?: string;
@@ -121,7 +138,7 @@ export const aiStructuredOutputNodeDefinition: NodeDefinition<
     type: "ai_structured_output",
     name: "AI Structured Output",
     version: "1.0.0",
-    description: "Generates typed, schema-validated JSON data using Gemini or Ollama.",
+    description: "Generates typed, schema-validated JSON data using Gemini.",
     category: "ai",
     inputs: [{ id: "prompt", label: "Prompt / Data Input" }],
     outputs: [{ id: "data", label: "Structured JSON Output" }],
@@ -135,7 +152,6 @@ export const aiStructuredOutputNodeDefinition: NodeDefinition<
         options: [
           { label: "Default Configured", value: "default" },
           { label: "Google Gemini", value: "gemini" },
-          { label: "Local Ollama", value: "ollama" },
         ],
       },
       {
@@ -204,7 +220,7 @@ export const aiStructuredOutputNodeDefinition: NodeDefinition<
 };
 
 export function registerAINodes(registry = defaultNodeRegistry): void {
-  const nodes = [aiTextGenerationNodeDefinition, aiStructuredOutputNodeDefinition];
+  const nodes = [aiTextGenerationNodeDefinition, aiStructuredOutputNodeDefinition, aiImageGenerationNodeDefinition];
   for (const node of nodes) {
     if (!registry.has(node.manifest.type)) {
       registry.register(node);

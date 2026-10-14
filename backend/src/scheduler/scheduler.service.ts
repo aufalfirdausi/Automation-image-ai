@@ -72,22 +72,76 @@ export class SchedulerService {
 
   shouldTrigger(trigger: TriggerRecord, now: Date): boolean {
     const config = trigger.config as ScheduleConfig;
-    const intervalMs = config.intervalMs || 60000; // default 60s
 
+    if (config.type === "daily") {
+      return this.shouldTriggerDaily(trigger, config, now);
+    }
+
+    const intervalMs = config.intervalMs || 60000; // default 60s
     if (!trigger.last_triggered_at) {
       return true;
     }
-
     const lastRunTime = new Date(trigger.last_triggered_at).getTime();
     return now.getTime() - lastRunTime >= intervalMs;
   }
 
+  private shouldTriggerDaily(
+    trigger: TriggerRecord,
+    config: ScheduleConfig,
+    now: Date
+  ): boolean {
+    const timeStr = config.time || "10:00";
+    const [targetHour, targetMinute] = timeStr.split(":").map((v) => parseInt(v, 10));
+    if (Number.isNaN(targetHour) || Number.isNaN(targetMinute)) return false;
+
+    // WIB is UTC+7 fixed offset (420 minutes)
+    const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
+    const nowWib = new Date(now.getTime() + WIB_OFFSET_MS);
+
+    const year = nowWib.getUTCFullYear();
+    const month = nowWib.getUTCMonth();
+    const day = nowWib.getUTCDate();
+
+    // Target slot instant today in UTC millis
+    const slotWibUtcMs = Date.UTC(year, month, day, targetHour, targetMinute, 0, 0) - WIB_OFFSET_MS;
+    const nowMs = now.getTime();
+
+    // Not yet reached target slot today
+    if (nowMs < slotWibUtcMs) {
+      return false;
+    }
+
+    // Never triggered: catchUp defaults to true
+    const catchUp = config.catchUp !== false;
+    if (!trigger.last_triggered_at) {
+      return catchUp;
+    }
+
+    const lastTriggeredMs = new Date(trigger.last_triggered_at).getTime();
+    // Guard: only fire if last run was strictly before today's target slot
+    return lastTriggeredMs < slotWibUtcMs;
+  }
+
   async fireSchedule(trigger: TriggerRecord, now: Date): Promise<void> {
+    const config = trigger.config as ScheduleConfig;
+    let idempotencyKey: string | undefined;
+
+    if (config.type === "daily") {
+      const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
+      const nowWib = new Date(now.getTime() + WIB_OFFSET_MS);
+      const y = nowWib.getUTCFullYear();
+      const m = String(nowWib.getUTCMonth() + 1).padStart(2, "0");
+      const d = String(nowWib.getUTCDate()).padStart(2, "0");
+      const slotTime = (config.time || "10:00").replace(":", "");
+      idempotencyKey = `${trigger.workflow_id}_daily_${y}${m}${d}_${slotTime}`;
+    }
+
     try {
       await this.triggerRepo.updateLastTriggeredAt(trigger.id, now);
       await this.executionService.startRun({
         workflowId: trigger.workflow_id,
         triggerType: "schedule",
+        idempotencyKey,
       });
     } catch (err) {
       console.error(

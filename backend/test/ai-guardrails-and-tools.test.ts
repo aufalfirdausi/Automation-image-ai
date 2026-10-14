@@ -274,4 +274,77 @@ describe("Phase 8: AI Automation, Guardrails & Controlled Tools Tests", () => {
       }
     });
   });
+
+  describe("Telegram Notify Node", () => {
+    const originalFetch = globalThis.fetch;
+
+    after(() => {
+      globalThis.fetch = originalFetch;
+    });
+
+    it("sends text message via Telegram sendMessage API", async () => {
+      let capturedUrl = "";
+      let capturedBody: any = null;
+
+      globalThis.fetch = (async (url: string, init?: RequestInit) => {
+        capturedUrl = url;
+        capturedBody = JSON.parse(init?.body as string);
+        return {
+          ok: true,
+          json: async () => ({ ok: true, result: { message_id: 42 } }),
+        } as any;
+      }) as any;
+
+      const workflow: Workflow = {
+        id: "wf_tg_text",
+        name: "Telegram Text Test",
+        nodes: [
+          {
+            id: "msg",
+            type: "static_value",
+            config: { value: "Digest for today: Next.js 15" },
+          },
+          {
+            id: "tg",
+            type: "telegram_notify",
+            config: { botToken: "test_token", chatId: "12345" },
+          },
+        ],
+        edges: [{ source: "msg", target: "tg" }],
+      };
+
+      const summary = await executeWorkflow(workflow, defaultNodeRegistry.toHandlerProvider());
+      assert.equal(summary.status, "completed");
+      assert.ok(capturedUrl.includes("/bottest_token/sendMessage"));
+      assert.equal(capturedBody.chat_id, "12345");
+      assert.equal(capturedBody.text, "Digest for today: Next.js 15");
+      assert.deepEqual(summary.context.nodeOutputs["tg"], { sentMessageId: 42 });
+    });
+
+    it("fails cleanly when botToken is missing", async () => {
+      const prevEnvToken = process.env.TELEGRAM_BOT_TOKEN;
+      delete process.env.TELEGRAM_BOT_TOKEN;
+
+      try {
+        const workflow: Workflow = {
+          id: "wf_tg_no_token",
+          name: "Telegram No Token",
+          nodes: [
+            {
+              id: "tg",
+              type: "telegram_notify",
+              config: { chatId: "12345" },
+            },
+          ],
+          edges: [],
+        };
+
+        const summary = await executeWorkflow(workflow, defaultNodeRegistry.toHandlerProvider());
+        assert.equal(summary.status, "failed");
+        assert.equal(summary.error?.code, "MISSING_TELEGRAM_TOKEN");
+      } finally {
+        if (prevEnvToken) process.env.TELEGRAM_BOT_TOKEN = prevEnvToken;
+      }
+    });
+  });
 });

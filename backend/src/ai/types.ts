@@ -20,11 +20,18 @@ export interface GenerateTextOptions {
   model?: string;
   timeoutMs?: number;
   signal?: AbortSignal;
+  enableSearch?: boolean;
+}
+
+export interface GroundingChunk {
+  title?: string;
+  uri: string;
 }
 
 export interface GenerateTextResult {
   text: string;
   model: string;
+  groundingChunks?: GroundingChunk[];
   usage?: {
     promptTokens?: number;
     candidateTokens?: number;
@@ -40,4 +47,21 @@ export interface AIProvider {
   readonly name: string;
   generateText(options: GenerateTextOptions): Promise<GenerateTextResult>;
   generateStructured<T = unknown>(options: GenerateStructuredOptions): Promise<{ data: T; rawText: string; model: string }>;
+}
+
+export interface GenerateImageOptions {
+  prompt: string;
+  systemInstruction?: string;
+  temperature?: number;
+  model?: string;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+  width?: number;
+  height?: number;
+}
+
+export interface GenerateImageResult {
+  imageUrl?: string;
+  base64Image?: string;
+  model: string;
 }

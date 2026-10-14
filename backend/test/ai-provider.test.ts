@@ -1,13 +1,12 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { OllamaProvider } from "../src/ai/ollama.provider.js";
 import { GeminiProvider } from "../src/ai/gemini.provider.js";
 import { registerAIProvider, getAIProvider, type AIProvider } from "../src/ai/index.js";
 import { executeWorkflow } from "../src/engine/runner.js";
 import { defaultNodeRegistry, registerCoreNodes, registerAINodes } from "../src/nodes/index.js";
 import type { Workflow } from "../src/engine/types.js";
 
-describe("Phase 7: Ollama & AI Provider Abstraction Tests", () => {
+describe("Phase 7: AI Provider Abstraction Tests", () => {
   const originalFetch = globalThis.fetch;
 
   before(() => {
@@ -17,49 +16,6 @@ describe("Phase 7: Ollama & AI Provider Abstraction Tests", () => {
 
   after(() => {
     globalThis.fetch = originalFetch;
-  });
-
-  it("OllamaProvider sends correct payload and extracts generated text", async () => {
-    let capturedBody: any = null;
-
-    globalThis.fetch = (async (url: string, init?: RequestInit) => {
-      capturedBody = JSON.parse(init?.body as string);
-      return {
-        ok: true,
-        json: async () => ({
-          response: "Hello from local Ollama model!",
-          prompt_eval_count: 12,
-          eval_count: 8,
-        }),
-      } as any;
-    }) as any;
-
-    const ollama = new OllamaProvider({ baseUrl: "http://127.0.0.1:11434", defaultModel: "llama3.2" });
-    const res = await ollama.generateText({ prompt: "Say hello", temperature: 0.7 });
-
-    assert.equal(res.text, "Hello from local Ollama model!");
-    assert.equal(res.model, "llama3.2");
-    assert.equal(res.usage?.totalTokens, 20);
-    assert.equal(capturedBody.prompt, "Say hello");
-    assert.equal(capturedBody.options.temperature, 0.7);
-  });
-
-  it("OllamaProvider parses structured JSON output cleanly", async () => {
-    globalThis.fetch = (async () => {
-      return {
-        ok: true,
-        json: async () => ({
-          response: JSON.stringify({ sentiment: "positive", score: 0.95 }),
-        }),
-      } as any;
-    }) as any;
-
-    const ollama = new OllamaProvider();
-    const res = await ollama.generateStructured<{ sentiment: string; score: number }>({
-      prompt: "Classify this text",
-    });
-
-    assert.deepEqual(res.data, { sentiment: "positive", score: 0.95 });
   });
 
   it("GeminiProvider formats Gemini API request and extracts candidate text", async () => {
@@ -92,6 +48,41 @@ describe("Phase 7: Ollama & AI Provider Abstraction Tests", () => {
     assert.ok(capturedUrl.includes("gemini-1.5-flash:generateContent?key=test-gemini-key"));
     assert.equal(capturedBody.contents[0].parts[0].text, "Explain relativity in one sentence");
     assert.equal(capturedBody.systemInstruction.parts[0].text, "You are a physics professor");
+  });
+
+  it("GeminiProvider includes google_search tool when enableSearch is true and extracts grounding chunks", async () => {
+    let capturedBody: any = null;
+
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      capturedBody = JSON.parse(init?.body as string);
+      return {
+        ok: true,
+        json: async () => ({
+          candidates: [
+            {
+              content: { parts: [{ text: "Next.js 15 was released" }] },
+              groundingMetadata: {
+                groundingChunks: [
+                  { web: { title: "Next.js Blog", uri: "https://nextjs.org/blog" } },
+                ],
+              },
+            },
+          ],
+        }),
+      } as any;
+    }) as any;
+
+    const gemini = new GeminiProvider({ apiKey: "test-key" });
+    const res = await gemini.generateText({
+      prompt: "Latest releases",
+      enableSearch: true,
+    });
+
+    assert.equal(res.text, "Next.js 15 was released");
+    assert.deepEqual(capturedBody.tools, [{ google_search: {} }]);
+    assert.deepEqual(res.groundingChunks, [
+      { title: "Next.js Blog", uri: "https://nextjs.org/blog" },
+    ]);
   });
 
   it("executes ai_generate_text node seamlessly in workflow engine", async () => {
@@ -132,7 +123,10 @@ describe("Phase 7: Ollama & AI Provider Abstraction Tests", () => {
 
     assert.equal(summary.status, "completed");
     assert.equal(summary.nodeStates["step_ai"], "completed");
-    assert.equal(summary.context.nodeOutputs["step_ai"], "AI: [Analyze the topic: Orchestrator Automation]");
+    assert.deepEqual(summary.context.nodeOutputs["step_ai"], {
+      text: "AI: [Analyze the topic: Orchestrator Automation]",
+      groundingChunks: [],
+    });
   });
 
   it("executes ai_structured_output node in workflow engine producing parsed JSON", async () => {

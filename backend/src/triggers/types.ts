@@ -1,8 +1,14 @@
 export type TriggerType = "schedule" | "webhook";
 
+export type ScheduleType = "interval" | "daily";
+
 export interface ScheduleConfig {
+  type?: ScheduleType;
   intervalMs?: number;
   cronExpression?: string;
+  time?: string;
+  timezone?: string;
+  catchUp?: boolean;
   enabled?: boolean;
 }
 

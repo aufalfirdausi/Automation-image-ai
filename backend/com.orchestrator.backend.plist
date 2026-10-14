@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.orchestrator.backend</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/node</string>
+        <string>/Users/aufaalfirdausi/Developer/automatic-content/Orchestrator-local/backend/node_modules/tsx/dist/cli.mjs</string>
+        <string>/Users/aufaalfirdausi/Developer/automatic-content/Orchestrator-local/backend/src/index.ts</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/aufaalfirdausi/Developer/automatic-content/Orchestrator-local/backend</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/aufaalfirdausi/Developer/automatic-content/Orchestrator-local/backend/orchestrator.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/aufaalfirdausi/Developer/automatic-content/Orchestrator-local/backend/orchestrator.err.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+</dict>
+</plist>

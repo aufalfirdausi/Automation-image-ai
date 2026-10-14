@@ -4,6 +4,17 @@ import { isIP } from "node:net";
 import { defaultNodeRegistry } from "../registry.js";
 import { GuardrailValidator } from "../../guardrails/guardrail.validator.js";
 import type { GuardrailRuleConfig } from "../../guardrails/types.js";
+import {
+  telegramNotifyNodeDefinition,
+  type TelegramNotifyConfig,
+  type TelegramNotifyOutput,
+} from "./telegram-notify.js";
+
+export {
+  telegramNotifyNodeDefinition,
+  type TelegramNotifyConfig,
+  type TelegramNotifyOutput,
+};
 
 /**
  * 1. AIGuardrailNode: validates AI output against safety patterns, string limits, and schemas.
@@ -344,6 +355,7 @@ export function registerToolNodes(registry = defaultNodeRegistry): void {
     aiGuardrailNodeDefinition,
     controlledHttpRequestNodeDefinition,
     humanApprovalGateNodeDefinition,
+    telegramNotifyNodeDefinition,
   ];
 
   for (const node of nodes) {

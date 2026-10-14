@@ -6,6 +6,11 @@ A local personal AI workflow automation platform inspired by workflow automation
 
 The project includes a visual React Flow workflow editor, a deterministic DAG execution engine, MySQL-backed workflow/run persistence, execution history, schedules, inbound webhooks, Gemini and Ollama provider integrations, output guardrails, and controlled HTTP requests.
 
+The platform also runs an automated daily content engine for Telegram & Instagram:
+- **Wave 1 (10:00 WIB)**: Morning frontend curation digest.
+- **Wave 2 (13:00 WIB)**: Afternoon Instagram blueprint (Reels script, 6-slide carousel copy, captions) + 16-color retro pixel-art cover.
+- See [docs/WORKFLOW_AUTOMATION.md](docs/WORKFLOW_AUTOMATION.md) for architecture, flowcharts, and operational guide.
+
 The detailed implementation status and phase history are maintained in [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md).
 
 ---
