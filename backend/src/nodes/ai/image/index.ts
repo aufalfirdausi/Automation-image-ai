@@ -1,6 +1,7 @@
 import type { NodeDefinition } from "../../types.js";
 import { defaultNodeRegistry } from "../../registry.js";
 import { getAIProvider, type AIProvider } from "../../../ai/index.js";
+import { buildStyledPrompt, fetchActiveStyle, parsePalette, snapToPalette } from "./style.js";
 
 export interface AIImageGenerationConfig {
   provider?: "default" | "gemini";
@@ -16,6 +17,7 @@ export interface AIImageGenerationOutput {
   imageUrl?: string;
   base64Image?: string;
   model: string;
+  style?: string;
 }
 
 export const aiImageGenerationNodeDefinition: NodeDefinition<
@@ -120,6 +122,9 @@ export const aiImageGenerationNodeDefinition: NodeDefinition<
         };
       }
 
+      const style = await fetchActiveStyle();
+      prompt = buildStyledPrompt(prompt, style);
+
       const result = await (provider as any).generateImage?.({
         prompt,
         model: config.model,
@@ -140,12 +145,22 @@ export const aiImageGenerationNodeDefinition: NodeDefinition<
         };
       }
 
+      let base64Image = result.base64Image;
+      if (base64Image) {
+        try {
+          base64Image = await snapToPalette(base64Image, parsePalette(style.palette));
+        } catch {
+          // keep raw image; palette snap is cosmetic, never lose the generation
+        }
+      }
+
       return {
         success: true,
         output: {
           imageUrl: result.imageUrl,
-          base64Image: result.base64Image,
+          base64Image,
           model: result.model,
+          style: style.name,
         },
       };
     },

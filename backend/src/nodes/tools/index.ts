@@ -9,11 +9,17 @@ import {
   type TelegramNotifyConfig,
   type TelegramNotifyOutput,
 } from "./telegram-notify.js";
+import {
+  googleSheetAppendNodeDefinition,
+  type GoogleSheetAppendConfig,
+} from "./google-sheet-append.js";
 
 export {
   telegramNotifyNodeDefinition,
   type TelegramNotifyConfig,
   type TelegramNotifyOutput,
+  googleSheetAppendNodeDefinition,
+  type GoogleSheetAppendConfig,
 };
 
 /**
@@ -356,6 +362,7 @@ export function registerToolNodes(registry = defaultNodeRegistry): void {
     controlledHttpRequestNodeDefinition,
     humanApprovalGateNodeDefinition,
     telegramNotifyNodeDefinition,
+    googleSheetAppendNodeDefinition,
   ];
 
   for (const node of nodes) {

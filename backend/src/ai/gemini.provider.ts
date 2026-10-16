@@ -22,12 +22,51 @@ export class GeminiProvider implements AIProvider {
       options?.imageApiKey ||
       process.env.GEMINI_IMAGE_API_KEY ||
       this.apiKey;
-    this.defaultModel = options?.defaultModel || process.env.GEMINI_DEFAULT_MODEL || "gemini-3.5-flash";
+    this.defaultModel = options?.defaultModel || process.env.GEMINI_DEFAULT_MODEL || "gemini-3.8-flash";
     this.defaultImageModel = options?.defaultImageModel || process.env.GEMINI_IMAGE_MODEL || "ag/gemini-3.1-flash-image";
     // Text API calls Google Gemini directly
     this.textBaseUrl = "https://generativelanguage.googleapis.com";
-    // Image API calls local 9Router OpenAI-compatible endpoint
+    // Image / Backup OpenAI-compatible endpoint via 9Router
     this.imageBaseUrl = (options?.imageBaseUrl || process.env.GEMINI_BASE_URL || "http://localhost:20128/v1").replace(/\/$/, "");
+  }
+
+  private async fallbackOpenAIChat(
+    prompt: string,
+    systemInstruction?: string,
+    isJson = false
+  ): Promise<string> {
+    const backupModel = process.env.AI_BACKUP_MODEL || "cx/gpt-6-luna";
+    const messages = [];
+    if (systemInstruction) {
+      messages.push({ role: "system", content: systemInstruction });
+    }
+    messages.push({ role: "user", content: prompt });
+
+    const response = await fetch(`${this.imageBaseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.imageApiKey}`,
+      },
+      body: JSON.stringify({
+        model: backupModel,
+        messages,
+        temperature: 0.7,
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.text().catch(() => "");
+      throw new AIProviderError(`Backup AI (${backupModel}) failed: ${err}`, this.name, "BACKUP_AI_ERROR");
+    }
+
+    const json = (await response.json()) as any;
+    let content = json.choices?.[0]?.message?.content || "";
+    if (isJson) {
+      // Strip markdown code fences if model returned them
+      content = content.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
+    }
+    return content;
   }
 
   async generateText(options: GenerateTextOptions): Promise<GenerateTextResult> {
@@ -105,6 +144,21 @@ export class GeminiProvider implements AIProvider {
         },
       };
     } catch (err) {
+      // Try fallback to OpenAI/Codex backup route if Gemini failed
+      try {
+        const fallbackText = await this.fallbackOpenAIChat(
+          options.prompt,
+          options.systemInstruction,
+          false
+        );
+        return {
+          text: fallbackText,
+          model: process.env.AI_BACKUP_MODEL || "cx/gpt-6-luna",
+        };
+      } catch (fallbackErr) {
+        // Fallback also failed or not available; report primary error
+      }
+
       if (err instanceof AIProviderError) throw err;
       const isAbort = (err as any)?.name === "AbortError";
       throw new AIProviderError(
@@ -211,6 +265,24 @@ export class GeminiProvider implements AIProvider {
     }
 
     try {
+      // Try fallback to OpenAI/Codex backup route before failing
+      try {
+        const fallbackRaw = await this.fallbackOpenAIChat(
+          options.prompt,
+          (options.systemInstruction ? options.systemInstruction + "\n" : "") +
+            "Output strictly valid JSON matching requested format without markdown wrapping.",
+          true
+        );
+        const fallbackData = JSON.parse(fallbackRaw) as T;
+        return {
+          data: fallbackData,
+          rawText: fallbackRaw,
+          model: process.env.AI_BACKUP_MODEL || "cx/gpt-6-luna",
+        };
+      } catch (fallbackErr) {
+        // Fallback also failed; propagate primary error
+      }
+
       if (lastError instanceof AIProviderError) throw lastError;
       const isAbort = (lastError as any)?.name === "AbortError";
       throw new AIProviderError(
