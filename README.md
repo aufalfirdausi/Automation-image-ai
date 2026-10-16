@@ -52,21 +52,33 @@ Orchestrator-local/
 
 ---
 
-## Technology Stack & Environment
+## Workflow Mappers (Active DAG Engines)
 
-- **Runtime**: Node.js `v24.6.0`
-- **Backend Stack**:
-  - `express`: `^4.21.2`
-  - `cors`: `^2.8.5`
-  - `dotenv`: `^16.4.7`
-  - `mysql2`: `^3.12.0`
-  - Dev: `typescript`: `^5.7.3`, `tsx`: `^4.19.2`, `@types/node`: `^22.13.1`, `@types/express`: `^4.17.21`, `@types/cors`: `^2.8.17`
-- **Frontend Stack**:
-  - `next`: `^15.1.7`
-  - `react`: `^19.0.0`
-  - `react-dom`: `^19.0.0`
-  - Dev: `typescript`: `^5.7.3`, `eslint`: `^9.20.1`, `eslint-config-next`: `^15.1.7`, `@types/node`: `^22.13.1`, `@types/react`: `^19.0.8`, `@types/react-dom`: `^19.0.8`
-- **Database**: MySQL (relational storage for workflows and execution records in subsequent phases)
+### Wave 1: Morning Tech Curation (`10:00 WIB`)
+Curates fresh frontend web development trends, tips, and beginner-friendly concepts, generates 9:16 pixel art, posts to Telegram, and logs to Google Sheet calendar.
+
+```mermaid
+flowchart TD
+    A[trigger_seed\nstatic_value] --> B[generate_blueprint\nai_structured_output]
+    B -->|cover_image_prompt| C[generate_cover\nai_generate_image]
+    B -->|telegram_package_markdown| D[send_telegram\ntelegram_notify]
+    C -->|base64Image| D
+    B -->|topic, hook, caption| E[sync_google_sheet\ngoogle_sheet_append]
+    C -->|image| E
+```
+
+### Wave 2: Afternoon Instagram Content Blueprint (`13:00 WIB`)
+Generates complete Instagram package (Reels script, 6-slide carousel copy, captions, hashtags) plus a 16-color pixel-art cover, syncs to Telegram and editorial calendar.
+
+```mermaid
+flowchart TD
+    A[trigger_seed\nstatic_value] --> B[generate_blueprint\nai_structured_output]
+    B -->|cover_image_prompt| C[generate_cover\nai_generate_image]
+    B -->|telegram_package_markdown| D[send_telegram\ntelegram_notify]
+    C -->|base64Image| D
+    B -->|topic, hook, caption, duration| E[sync_google_sheet\ngoogle_sheet_append]
+    C -->|image| E
+```
 
 ---
 
