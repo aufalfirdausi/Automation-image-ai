@@ -9,7 +9,7 @@ interface RunRow extends RowDataPacket {
   id: string;
   workflow_id: string;
   workflow_version: number;
-  workflow_snapshot: string | Workflow;
+  workflow_snapshot?: string | Workflow;
   status: RunStatus;
   trigger_type: RunTriggerType;
   idempotency_key: string | null;
@@ -27,10 +27,14 @@ export class RunRepository {
   }
 
   private parseRow(row: RunRow): RunRecord {
+    if (row.workflow_snapshot === undefined) {
+      throw new Error("Run query must include workflow_snapshot");
+    }
+
     const snapshot =
       typeof row.workflow_snapshot === "string"
         ? (JSON.parse(row.workflow_snapshot) as Workflow)
-        : (row.workflow_snapshot as Workflow);
+        : row.workflow_snapshot;
 
     let parsedError: NodeExecutionError | null = null;
     if (row.error) {
@@ -58,6 +62,26 @@ export class RunRepository {
       created_at: toIsoString(row.created_at) || new Date().toISOString(),
       started_at: toIsoString(row.started_at),
       finished_at: toIsoString(row.finished_at),
+    };
+  }
+
+  private toDtoFromRow(row: RunRow): RunDto {
+    const error =
+      typeof row.error === "string"
+        ? (JSON.parse(row.error) as NodeExecutionError)
+        : row.error ?? null;
+
+    return {
+      id: row.id,
+      workflowId: row.workflow_id,
+      workflowVersion: row.workflow_version,
+      status: row.status,
+      triggerType: row.trigger_type,
+      idempotencyKey: row.idempotency_key,
+      error,
+      createdAt: String(row.created_at),
+      startedAt: row.started_at ? String(row.started_at) : null,
+      finishedAt: row.finished_at ? String(row.finished_at) : null,
     };
   }
 
@@ -158,14 +182,16 @@ export class RunRepository {
       params
     );
 
-    const updated = await this.getRunById(id);
-    if (!updated) {
-      throw new Error(`Failed to retrieve updated run '${id}'`);
-    }
-    return updated;
+    return {
+      ...current,
+      status: newStatus,
+      started_at: options?.startedAt !== undefined ? options.startedAt : current.started_at,
+      finished_at: options?.finishedAt !== undefined ? options.finishedAt : current.finished_at,
+      error: options?.error !== undefined ? options.error : current.error,
+    };
   }
 
-  async listRuns(filter: RunFilterOptions = {}): Promise<{ runs: RunRecord[]; total: number }> {
+  async listRuns(filter: RunFilterOptions = {}): Promise<{ runs: RunDto[]; total: number }> {
     const page = Math.max(1, Number(filter.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(filter.limit) || 20));
     const offset = (page - 1) * limit;
@@ -192,12 +218,13 @@ export class RunRepository {
     const total = Number(countRows[0]?.total || 0);
 
     const [rows] = await this.pool.query<RunRow[]>(
-      `SELECT * FROM workflow_runs ${whereSql} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+      `SELECT id, workflow_id, workflow_version, status, trigger_type, idempotency_key, error, created_at, started_at, finished_at
+       FROM workflow_runs ${whereSql} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
       [...params, limit, offset]
     );
 
     return {
-      runs: rows.map((r) => this.parseRow(r)),
+      runs: rows.map((row) => this.toDtoFromRow(row)),
       total,
     };
   }

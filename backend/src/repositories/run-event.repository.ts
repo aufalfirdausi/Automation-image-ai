@@ -174,16 +174,22 @@ export class RunEventRepository {
       ]
     );
 
-    const [rows] = await this.pool.query<RunEventRow[]>(
-      "SELECT * FROM workflow_run_events WHERE id = ?",
-      [params.id]
-    );
-
-    if (rows.length === 0) {
-      throw new Error(`Failed to retrieve newly created event '${params.id}'`);
-    }
-
-    return this.parseRow(rows[0]);
+    return {
+      id: params.id,
+      run_id: params.runId,
+      node_id: params.nodeId,
+      node_type: params.nodeType,
+      status: params.status,
+      input: sanitizedInput,
+      output: sanitizedOutput,
+      error: params.error ?? null,
+      branch: params.branch ?? null,
+      started_at: params.startedAt ?? null,
+      finished_at: params.finishedAt ?? null,
+      duration_ms: params.durationMs ?? null,
+      event_order: params.eventOrder,
+      created_at: new Date().toISOString(),
+    };
   }
 
   async listEventsByRunId(runId: string): Promise<RunEventRecord[]> {

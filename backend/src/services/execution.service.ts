@@ -279,7 +279,7 @@ export class ExecutionService {
     const totalPages = Math.ceil(total / limit);
 
     return {
-      runs: runs.map((r) => this.runRepo.toDto(r)),
+      runs,
       total,
       page,
       limit,

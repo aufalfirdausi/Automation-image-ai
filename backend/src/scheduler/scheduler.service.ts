@@ -137,12 +137,12 @@ export class SchedulerService {
     }
 
     try {
-      await this.triggerRepo.updateLastTriggeredAt(trigger.id, now);
       await this.executionService.startRun({
         workflowId: trigger.workflow_id,
         triggerType: "schedule",
         idempotencyKey,
       });
+      await this.triggerRepo.updateLastTriggeredAt(trigger.id, now);
     } catch (err) {
       console.error(
         `[SchedulerService] Failed to execute scheduled run for workflow '${trigger.workflow_id}':`,

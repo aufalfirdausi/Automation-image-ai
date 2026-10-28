@@ -36,6 +36,10 @@ describe("Image Style System", () => {
     assert.match(built, /Theme: CSS/);
   });
 
+  it("rejects palette with count other than 16", async () => {
+    await assert.rejects(() => snapToPalette("", [[0, 0, 0]]), /exactly 16/);
+  });
+
   it("snaps all pixels to nearest palette color", async () => {
     // 2x2 test image with arbitrary colors
     const srcBuf = await sharp({

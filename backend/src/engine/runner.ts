@@ -21,6 +21,28 @@ import {
 import { resolveNodeInput } from "./resolve-input.js";
 import { resolveOutgoingEdgeStates } from "./resolve-edges.js";
 
+function waitForRetry(delayMs: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => signal.removeEventListener("abort", abort);
+    const timeout = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, delayMs);
+    const abort = () => {
+      clearTimeout(timeout);
+      cleanup();
+      const error = new Error("Workflow execution cancelled");
+      error.name = "AbortError";
+      reject(error);
+    };
+    if (signal.aborted) {
+      abort();
+      return;
+    }
+    signal.addEventListener("abort", abort, { once: true });
+  });
+}
+
 /**
  * Executes a validated DAG workflow using deterministic dependency-driven traversal.
  */
@@ -303,7 +325,11 @@ export async function executeWorkflow(
         for (let attempt = 1; attempt <= options.retryPolicy.maxRetries; attempt++) {
           if (workflowAbortController.signal.aborted) break;
           if (options.retryPolicy.backoffMs && options.retryPolicy.backoffMs > 0) {
-            await new Promise((resolve) => setTimeout(resolve, options.retryPolicy!.backoffMs));
+            try {
+              await waitForRetry(options.retryPolicy.backoffMs, workflowAbortController.signal);
+            } catch {
+              break;
+            }
           }
           result = await executeNodeWithAbort(handler, executionParams);
           if (result.success) break;

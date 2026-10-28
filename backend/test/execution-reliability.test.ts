@@ -199,6 +199,33 @@ describe("Phase 5.4: Execution Reliability (Timeout, Cancellation, Retry)", () =
     assert.deepEqual(summary.context.nodeOutputs["flake"], { attempt: 3 });
   });
 
+  it("cancels retry backoff when workflow signal aborts", async () => {
+    const controller = new AbortController();
+    const workflow: Workflow = {
+      id: "wf_retry_cancel",
+      name: "Retry Cancellation Workflow",
+      nodes: [{ id: "flake", type: "flaky_node", config: {} }],
+      edges: [],
+    };
+    const handlers: Record<string, NodeHandler> = {
+      flaky_node: {
+        async execute() {
+          controller.abort();
+          return { success: false, error: { code: "TRANSIENT", message: "retry me" } };
+        },
+      },
+    };
+
+    const startedAt = Date.now();
+    const summary = await executeWorkflow(workflow, handlers, {
+      signal: controller.signal,
+      retryPolicy: { maxRetries: 1, retryableCodes: ["TRANSIENT"], backoffMs: 1000 },
+    });
+
+    assert.equal(summary.error?.code, "EXECUTION_ABORTED");
+    assert.ok(Date.now() - startedAt < 100, "cancellation must not wait for retry backoff");
+  });
+
   it("records run status as 'cancelled' in ExecutionService when aborted", async () => {
     registerCoreNodes();
 

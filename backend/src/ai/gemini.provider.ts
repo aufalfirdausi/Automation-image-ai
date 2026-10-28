@@ -1,5 +1,35 @@
 import { AIProviderError, type AIProvider, type GenerateTextOptions, type GenerateTextResult, type GenerateStructuredOptions, type GenerateImageOptions, type GenerateImageResult } from "./types.js";
 
+function waitForRetry(delayMs: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => signal?.removeEventListener("abort", abort);
+    const timeout = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, delayMs);
+    const abort = () => {
+      clearTimeout(timeout);
+      cleanup();
+      const error = new Error("Request aborted");
+      error.name = "AbortError";
+      reject(error);
+    };
+    if (signal?.aborted) {
+      abort();
+      return;
+    }
+    signal?.addEventListener("abort", abort, { once: true });
+  });
+}
+
+function canFallback(error: unknown, signal?: AbortSignal): boolean {
+  if (signal?.aborted) return false;
+  if (error instanceof AIProviderError) {
+    return error.status === 429 || (error.status !== undefined && error.status >= 500);
+  }
+  return error instanceof TypeError;
+}
+
 export class GeminiProvider implements AIProvider {
   readonly name = "gemini";
   private apiKey: string;
@@ -22,7 +52,7 @@ export class GeminiProvider implements AIProvider {
       options?.imageApiKey ||
       process.env.GEMINI_IMAGE_API_KEY ||
       this.apiKey;
-    this.defaultModel = options?.defaultModel || process.env.GEMINI_DEFAULT_MODEL || "gemini-3.8-flash";
+    this.defaultModel = options?.defaultModel || process.env.GEMINI_DEFAULT_MODEL || "gemini-2.5-flash";
     this.defaultImageModel = options?.defaultImageModel || process.env.GEMINI_IMAGE_MODEL || "ag/gemini-3.1-flash-image";
     // Text API calls Google Gemini directly
     this.textBaseUrl = "https://generativelanguage.googleapis.com";
@@ -33,7 +63,8 @@ export class GeminiProvider implements AIProvider {
   private async fallbackOpenAIChat(
     prompt: string,
     systemInstruction?: string,
-    isJson = false
+    isJson = false,
+    signal?: AbortSignal
   ): Promise<string> {
     const backupModel = process.env.AI_BACKUP_MODEL || "cx/gpt-6-luna";
     const messages = [];
@@ -53,6 +84,7 @@ export class GeminiProvider implements AIProvider {
         messages,
         temperature: 0.7,
       }),
+      signal,
     });
 
     if (!response.ok) {
@@ -144,19 +176,21 @@ export class GeminiProvider implements AIProvider {
         },
       };
     } catch (err) {
-      // Try fallback to OpenAI/Codex backup route if Gemini failed
-      try {
-        const fallbackText = await this.fallbackOpenAIChat(
-          options.prompt,
-          options.systemInstruction,
-          false
-        );
-        return {
-          text: fallbackText,
-          model: process.env.AI_BACKUP_MODEL || "cx/gpt-6-luna",
-        };
-      } catch (fallbackErr) {
-        // Fallback also failed or not available; report primary error
+      if (canFallback(err, controller.signal)) {
+        try {
+          const fallbackText = await this.fallbackOpenAIChat(
+            options.prompt,
+            options.systemInstruction,
+            false,
+            controller.signal
+          );
+          return {
+            text: fallbackText,
+            model: process.env.AI_BACKUP_MODEL || "cx/gpt-6-luna",
+          };
+        } catch {
+          // Preserve primary error when fallback also fails.
+        }
       }
 
       if (err instanceof AIProviderError) throw err;
@@ -183,7 +217,7 @@ export class GeminiProvider implements AIProvider {
     const url = `${this.textBaseUrl}/v1beta/models/${model}:generateContent?key=${this.apiKey}`;
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), options.timeoutMs || 180000);
+    const timeout = setTimeout(() => controller.abort(), options.timeoutMs || 300000);
     const abortFromWorkflow = () => controller.abort();
     options.signal?.addEventListener("abort", abortFromWorkflow, { once: true });
 
@@ -225,7 +259,7 @@ export class GeminiProvider implements AIProvider {
           const isRetryable = response.status === 503 || response.status === 429;
           if (isRetryable && attempt < maxAttempts) {
             const delayMs = 2000 * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 500);
-            await new Promise((r) => setTimeout(r, delayMs));
+            await waitForRetry(delayMs, controller.signal);
             continue;
           }
           throw new AIProviderError(
@@ -257,7 +291,7 @@ export class GeminiProvider implements AIProvider {
           (err.status === 503 || err.status === 429);
         if (isRetryable && attempt < maxAttempts) {
           const delayMs = 2000 * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 500);
-          await new Promise((r) => setTimeout(r, delayMs));
+          await waitForRetry(delayMs, controller.signal);
           continue;
         }
         break;
@@ -265,22 +299,24 @@ export class GeminiProvider implements AIProvider {
     }
 
     try {
-      // Try fallback to OpenAI/Codex backup route before failing
-      try {
-        const fallbackRaw = await this.fallbackOpenAIChat(
-          options.prompt,
-          (options.systemInstruction ? options.systemInstruction + "\n" : "") +
-            "Output strictly valid JSON matching requested format without markdown wrapping.",
-          true
-        );
-        const fallbackData = JSON.parse(fallbackRaw) as T;
-        return {
-          data: fallbackData,
-          rawText: fallbackRaw,
-          model: process.env.AI_BACKUP_MODEL || "cx/gpt-6-luna",
-        };
-      } catch (fallbackErr) {
-        // Fallback also failed; propagate primary error
+      if (canFallback(lastError, controller.signal)) {
+        try {
+          const fallbackRaw = await this.fallbackOpenAIChat(
+            options.prompt,
+            (options.systemInstruction ? options.systemInstruction + "\n" : "") +
+              "Output strictly valid JSON matching requested format without markdown wrapping.",
+            true,
+            controller.signal
+          );
+          const fallbackData = JSON.parse(fallbackRaw) as T;
+          return {
+            data: fallbackData,
+            rawText: fallbackRaw,
+            model: process.env.AI_BACKUP_MODEL || "cx/gpt-6-luna",
+          };
+        } catch {
+          // Preserve primary error when fallback also fails.
+        }
       }
 
       if (lastError instanceof AIProviderError) throw lastError;

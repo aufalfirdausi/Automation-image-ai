@@ -9,6 +9,10 @@ import {
   registerToolNodes,
 } from "../src/nodes/index.js";
 import type { Workflow } from "../src/engine/types.js";
+import {
+  googleSheetQueueReadNodeDefinition,
+  googleSheetQueueUpdateNodeDefinition,
+} from "../src/nodes/tools/google-sheet-queue.js";
 
 describe("Phase 8: AI Automation, Guardrails & Controlled Tools Tests", () => {
   before(() => {
@@ -272,6 +276,43 @@ describe("Phase 8: AI Automation, Guardrails & Controlled Tools Tests", () => {
         assert.equal(summary.status, "failed");
         assert.equal(summary.error?.code, "APPROVAL_DECISION_REQUIRED");
       }
+    });
+  });
+
+  describe("Google Sheet Queue Nodes", () => {
+    const originalFetch = globalThis.fetch;
+
+    after(() => {
+      globalThis.fetch = originalFetch;
+    });
+
+    it("fails queue read when webhook URL is missing", async () => {
+      const previous = process.env.GOOGLE_SHEET_QUEUE_URL;
+      delete process.env.GOOGLE_SHEET_QUEUE_URL;
+      try {
+        const result = await googleSheetQueueReadNodeDefinition.handler.execute({
+          nodeId: "queue",
+          config: {},
+          input: null,
+          context: { executionId: "test", workflowId: "test", startedAt: new Date().toISOString(), nodeOutputs: {} },
+        });
+        assert.equal(result.success, false);
+        if (!result.success) assert.equal(result.error?.code, "MISSING_QUEUE_WEBHOOK_URL");
+      } finally {
+        if (previous) process.env.GOOGLE_SHEET_QUEUE_URL = previous;
+      }
+    });
+
+    it("fails queue update on non-success HTTP status", async () => {
+      globalThis.fetch = (async () => ({ ok: false, status: 500 })) as any;
+      const result = await googleSheetQueueUpdateNodeDefinition.handler.execute({
+        nodeId: "queue-update",
+        config: { webhookUrl: "https://example.test/queue" },
+        input: { rowIndex: 2 },
+        context: { executionId: "test", workflowId: "test", startedAt: new Date().toISOString(), nodeOutputs: {} },
+      });
+        assert.equal(result.success, false);
+        if (!result.success) assert.equal(result.error?.code, "QUEUE_UPDATE_ERROR");
     });
   });
 

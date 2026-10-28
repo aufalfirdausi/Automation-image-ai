@@ -13,6 +13,12 @@ import {
   googleSheetAppendNodeDefinition,
   type GoogleSheetAppendConfig,
 } from "./google-sheet-append.js";
+import {
+  googleSheetQueueReadNodeDefinition,
+  googleSheetQueueUpdateNodeDefinition,
+  type GoogleSheetQueueReadConfig,
+  type GoogleSheetQueueUpdateConfig,
+} from "./google-sheet-queue.js";
 
 export {
   telegramNotifyNodeDefinition,
@@ -20,6 +26,10 @@ export {
   type TelegramNotifyOutput,
   googleSheetAppendNodeDefinition,
   type GoogleSheetAppendConfig,
+  googleSheetQueueReadNodeDefinition,
+  googleSheetQueueUpdateNodeDefinition,
+  type GoogleSheetQueueReadConfig,
+  type GoogleSheetQueueUpdateConfig,
 };
 
 /**
@@ -363,6 +373,8 @@ export function registerToolNodes(registry = defaultNodeRegistry): void {
     humanApprovalGateNodeDefinition,
     telegramNotifyNodeDefinition,
     googleSheetAppendNodeDefinition,
+    googleSheetQueueReadNodeDefinition,
+    googleSheetQueueUpdateNodeDefinition,
   ];
 
   for (const node of nodes) {

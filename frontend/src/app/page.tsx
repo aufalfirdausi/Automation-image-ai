@@ -23,19 +23,22 @@ export default function DashboardPage() {
   const checkConnection = useCallback(async () => {
     setLoading(true);
     setDeleteError(null);
-    const [hResult, runsResult, wfResult] = await Promise.all([
-      fetchHealth(),
-      fetchRunsApi({ limit: 5 }),
-      fetchWorkflowsApi(),
-    ]);
-    setHealthData(hResult);
-    if (runsResult.success && runsResult.data) {
-      setRecentRuns(runsResult.data);
+    try {
+      const [hResult, runsResult, wfResult] = await Promise.all([
+        fetchHealth(),
+        fetchRunsApi({ limit: 5 }),
+        fetchWorkflowsApi(),
+      ]);
+      setHealthData(hResult);
+      if (runsResult.success && runsResult.data) {
+        setRecentRuns(runsResult.data);
+      }
+      if (wfResult.success && wfResult.data) {
+        setWorkflows(wfResult.data);
+      }
+    } finally {
+      setLoading(false);
     }
-    if (wfResult.success && wfResult.data) {
-      setWorkflows(wfResult.data);
-    }
-    setLoading(false);
   }, []);
 
   const handleDeleteWorkflow = async (workflow: WorkflowListItem) => {

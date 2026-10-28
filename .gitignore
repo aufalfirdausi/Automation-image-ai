@@ -4,6 +4,7 @@ node_modules/
 .pnp.js
 
 # Build Outputs
+backend/generated_carousel/
 dist/
 build/
 .next/

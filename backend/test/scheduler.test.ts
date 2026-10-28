@@ -37,9 +37,10 @@ describe("Phase 6: SchedulerService Evaluation & Execution", () => {
     assert.equal(scheduler.shouldTrigger(dueTrigger, now), true);
   });
 
-  it("fires scheduled workflow execution and updates last_triggered_at on tick", async () => {
+  it("starts scheduled run before updating last_triggered_at", async () => {
     let triggeredWorkflowId: string | null = null;
     let updatedTriggerId: string | null = null;
+    const operations: string[] = [];
 
     const mockTriggerRepo: any = {
       listTriggers: async () => [
@@ -55,12 +56,14 @@ describe("Phase 6: SchedulerService Evaluation & Execution", () => {
         },
       ],
       updateLastTriggeredAt: async (id: string) => {
+        operations.push("mark-triggered");
         updatedTriggerId = id;
       },
     };
 
     const mockExecService: any = {
       startRun: async (params: any) => {
+        operations.push("start-run");
         triggeredWorkflowId = params.workflowId;
         return { run: { id: "run_sched_test", status: "succeeded" } };
       },
@@ -70,8 +73,36 @@ describe("Phase 6: SchedulerService Evaluation & Execution", () => {
     const firedCount = await scheduler.tick();
 
     assert.equal(firedCount, 1);
-    assert.equal(updatedTriggerId, "trig_due");
     assert.equal(triggeredWorkflowId, "wf_due_1");
+    assert.equal(updatedTriggerId, "trig_due");
+    assert.deepEqual(operations, ["start-run", "mark-triggered"]);
+  });
+
+  it("does not mark trigger as fired when run creation fails", async () => {
+    let updated = false;
+    const scheduler = new SchedulerService(
+      { updateLastTriggeredAt: async () => { updated = true; } } as any,
+      { startRun: async () => { throw new Error("database unavailable"); } } as any
+    );
+    const now = new Date("2026-10-12T03:00:00.000Z");
+    const originalError = console.error;
+    console.error = () => {};
+    try {
+      await scheduler.fireSchedule({
+        id: "trig_retry",
+        workflow_id: "wf_retry",
+        type: "schedule",
+        config: { type: "daily", time: "10:00" },
+        enabled: true,
+        last_triggered_at: null,
+        created_at: now.toISOString(),
+        updated_at: now.toISOString(),
+      }, now);
+    } finally {
+      console.error = originalError;
+    }
+
+    assert.equal(updated, false);
   });
 
   describe("Daily WIB Slot Evaluation & Catch-up", () => {

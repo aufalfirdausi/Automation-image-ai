@@ -60,6 +60,7 @@ function WorkflowEditorContent() {
 
   // Workflow loading states
   const [loadingWorkflow, setLoadingWorkflow] = useState<boolean>(true);
+  const [workflowExists, setWorkflowExists] = useState<boolean>(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [initialFlowData, setInitialFlowData] = useState<{
     nodes: CanvasNode[];
@@ -134,6 +135,7 @@ function WorkflowEditorContent() {
           currentManifests || manifests
         );
         setCurrentWorkflow(loadedWorkflow);
+        setWorkflowExists(true);
         setInitialFlowData({ nodes, edges });
         setIsDirty(false);
         triggerValidation(loadedWorkflow);
@@ -145,6 +147,7 @@ function WorkflowEditorContent() {
           nodes: [],
           edges: [],
         });
+        setWorkflowExists(false);
         setInitialFlowData({ nodes: [], edges: [] });
         setIsDirty(false);
       } else {
@@ -225,11 +228,12 @@ function WorkflowEditorContent() {
         id: currentWorkflow.id,
         name: currentWorkflow.name,
         graph_definition: currentWorkflow,
-      });
+      }, workflowExists);
       if (!saveRes.success) {
         alert(`Failed to save workflow before running: ${saveRes.error?.message || "Unknown error"}`);
         return;
       }
+      setWorkflowExists(true);
       setIsDirty(false);
 
       const runRes = await triggerRunApi(currentWorkflow.id);
@@ -243,7 +247,7 @@ function WorkflowEditorContent() {
     } finally {
       setExecuting(false);
     }
-  }, [currentWorkflow, executing, handleSelectRun, isValid, loadRuns, saving, validating]);
+  }, [currentWorkflow, executing, handleSelectRun, isValid, loadRuns, saving, validating, workflowExists]);
 
   const handleGraphChange = useCallback(
     (nodes: CanvasNode[], edges: CanvasEdge[]) => {
@@ -336,9 +340,10 @@ function WorkflowEditorContent() {
                 id: currentWorkflow.id,
                 name: currentWorkflow.name,
                 graph_definition: currentWorkflow,
-              });
+              }, workflowExists);
               setSaving(false);
               if (res.success) {
+                setWorkflowExists(true);
                 setIsDirty(false);
                 alert("Workflow saved successfully to database!");
               } else {

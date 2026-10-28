@@ -43,10 +43,12 @@ export const googleSheetAppendNodeDefinition: NodeDefinition<
         "";
 
       if (!webhookUrl) {
-        // Ponytail: If webhook URL missing, skip quietly without breaking workflow
         return {
-          success: true,
-          output: { success: false, reason: "GOOGLE_SHEET_WEBHOOK_URL not configured" },
+          success: false,
+          error: {
+            code: "MISSING_SHEET_WEBHOOK_URL",
+            message: "GOOGLE_SHEET_WEBHOOK_URL is not configured in environment or node config.",
+          },
         };
       }
 
@@ -103,23 +105,25 @@ export const googleSheetAppendNodeDefinition: NodeDefinition<
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
+          signal: params.signal,
         });
-
         const text = await response.text().catch(() => "");
-        return {
-          success: true,
-          output: {
-            success: response.ok,
-            status: response.status,
-            response: text,
-          },
-        };
-      } catch (err) {
-        return {
-          success: true,
-          output: {
+        if (!response.ok) {
+          return {
             success: false,
-            error: err instanceof Error ? err.message : String(err),
+            error: {
+              code: "SHEET_APPEND_ERROR",
+              message: `Google Sheet append failed with HTTP ${response.status}: ${text}`,
+            },
+          };
+        }
+        return { success: true, output: { success: true, status: response.status, response: text } };
+      } catch (error) {
+        return {
+          success: false,
+          error: {
+            code: error instanceof Error && error.name === "AbortError" ? "SHEET_APPEND_ABORTED" : "SHEET_APPEND_FAILED",
+            message: error instanceof Error ? error.message : String(error),
           },
         };
       }

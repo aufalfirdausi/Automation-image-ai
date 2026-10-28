@@ -1,10 +1,14 @@
 import { createServer } from "./server.js";
 import { config } from "./config/env.js";
 import { SchedulerService } from "./scheduler/scheduler.service.js";
+import { TelegramBotListenerService } from "./services/telegram-listener.service.js";
 
 const app = createServer();
 const scheduler = new SchedulerService(undefined, undefined, 5000);
 scheduler.start();
+
+const telegramListener = new TelegramBotListenerService();
+telegramListener.start();
 
 const server = app.listen(config.port, () => {
   console.log(`[Orchestrator Backend] Server running on http://localhost:${config.port}`);
@@ -13,6 +17,7 @@ const server = app.listen(config.port, () => {
 });
 
 process.on("SIGINT", () => {
+  telegramListener.stop();
   scheduler.stop();
   server.close(() => {
     console.log("[Orchestrator Backend] Server terminated");
@@ -21,6 +26,7 @@ process.on("SIGINT", () => {
 });
 
 process.on("SIGTERM", () => {
+  telegramListener.stop();
   scheduler.stop();
   server.close(() => {
     console.log("[Orchestrator Backend] Server terminated");

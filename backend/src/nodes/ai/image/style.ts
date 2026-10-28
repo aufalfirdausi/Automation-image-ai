@@ -43,22 +43,38 @@ const TRIGGER_RE = /swatch|palette|hex|color code|colour code/i;
 const SAFE_TAIL =
   "Single full-bleed illustration filling the whole canvas edge-to-edge. No sidebars, no borders, no strips along edges, no sample boxes, no watermark, no handle.";
 
+// In-memory cache for active style (10 minute TTL)
+let cachedStyle: { style: ImageStyle; expiresAt: number } | null = null;
+
 export async function fetchActiveStyle(url = process.env.GOOGLE_SHEET_WEBHOOK_URL): Promise<ImageStyle> {
   if (!url) return DEFAULT_STYLE;
+
+  // Return non-expired cached style immediately
+  if (cachedStyle && Date.now() < cachedStyle.expiresAt) {
+    return cachedStyle.style;
+  }
+
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
+    const res = await fetch(url, { signal: AbortSignal.timeout(120000) });
     const json = (await res.json()) as { status?: string; style?: Partial<ImageStyle> };
     const s = json.style;
-    if (json.status !== "success" || !s || parsePalette(String(s.palette ?? "")).length === 0) return DEFAULT_STYLE;
-    return {
+    if (json.status !== "success" || !s || parsePalette(String(s.palette ?? "")).length !== 16) {
+      return cachedStyle ? cachedStyle.style : DEFAULT_STYLE;
+    }
+    const resolved: ImageStyle = {
       name: String(s.name ?? "Sheet style"),
       palette: String(s.palette),
       distribution: String(s.distribution ?? ""),
       composition: String(s.composition ?? ""),
       rules: String(s.rules ?? ""),
     };
-  } catch {
-    return DEFAULT_STYLE;
+
+    // Cache valid response for 10 minutes
+    cachedStyle = { style: resolved, expiresAt: Date.now() + 10 * 60 * 1000 };
+    return resolved;
+  } catch (err) {
+    console.warn("[StyleFetch] Failed to fetch active style from Google Sheet. Using fallback:", err instanceof Error ? err.message : String(err));
+    return cachedStyle ? cachedStyle.style : DEFAULT_STYLE;
   }
 }
 
@@ -115,8 +131,6 @@ const safeLines = (text: string) =>
 export function buildStyledPrompt(scene: string, style: ImageStyle): string {
   return [
     safeLines(scene),
-    "COLOR USE:",
-    safeLines(style.distribution),
     "COMPOSITION & PERSPECTIVE:",
     safeLines(style.composition),
     "STYLE RULES:",
@@ -127,6 +141,10 @@ export function buildStyledPrompt(scene: string, style: ImageStyle): string {
 
 // ponytail: nearest-color snap only enforces palette, not true pixel grid. Add downscale+nearest upscale if model output looks blurry.
 export async function snapToPalette(base64: string, palette: [number, number, number][]): Promise<string> {
+  if (palette.length !== 16) {
+    throw new Error("Image palette must contain exactly 16 unique colors");
+  }
+
   const { data, info } = await sharp(Buffer.from(base64, "base64"))
     .removeAlpha()
     .raw()
