@@ -15,6 +15,42 @@ export interface TelegramNotifyOutput {
   documentSent?: boolean;
 }
 
+function readCarouselPrompts(input: unknown): string[] {
+  const candidates = input && typeof input === "object"
+    ? [input as Record<string, unknown>, ...Object.values(input as Record<string, unknown>).filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === "object")]
+    : [];
+
+  for (const candidate of candidates) {
+    const prompts = candidate.carousel_prompts ?? candidate.carouselPrompts;
+    if (Array.isArray(prompts)) {
+      const values = prompts.filter((prompt): prompt is string => typeof prompt === "string" && prompt.trim().length > 0);
+      if (values.length > 0) return values.slice(0, 6);
+    }
+
+    if (Array.isArray(candidate.carousel)) {
+      const values = candidate.carousel
+        .map((slide) => {
+          if (typeof slide === "string") return slide;
+          if (!slide || typeof slide !== "object") return "";
+          const value = slide as Record<string, unknown>;
+          return typeof value.image_prompt === "string" ? value.image_prompt : typeof value.prompt === "string" ? value.prompt : "";
+        })
+        .filter((prompt) => prompt.trim().length > 0);
+      if (values.length > 0) return values.slice(0, 6);
+    }
+  }
+
+  return [];
+}
+
+function formatCarouselPrompts(prompts: string[]): string {
+  return [
+    "*Prompt Carousel — gunakan tema visual sama dengan cover*",
+    "Rasio 4:5. Pertahankan gaya pixel-art, palet, karakter, dan komposisi cover.",
+    ...prompts.map((prompt, index) => `\n*Slide ${index + 1}*\n${prompt}`),
+  ].join("\n");
+}
+
 export const telegramNotifyNodeDefinition: NodeDefinition<
   TelegramNotifyConfig,
   unknown,
@@ -246,7 +282,7 @@ export const telegramNotifyNodeDefinition: NodeDefinition<
         });
       }
 
-      // 3. Text Message (digest)
+      // 3. Text Message (digest + carousel prompts)
       let text = "";
       if (typeof input === "string") {
         text = input;
@@ -281,6 +317,11 @@ export const telegramNotifyNodeDefinition: NodeDefinition<
         }
       } else {
         text = config.caption || "";
+      }
+
+      const carouselPrompts = readCarouselPrompts(input);
+      if (carouselPrompts.length > 0) {
+        text = [text, formatCarouselPrompts(carouselPrompts)].filter(Boolean).join("\n\n");
       }
 
       if (!text.trim()) {

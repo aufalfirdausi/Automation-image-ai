@@ -13,6 +13,7 @@ import {
   googleSheetQueueReadNodeDefinition,
   googleSheetQueueUpdateNodeDefinition,
 } from "../src/nodes/tools/google-sheet-queue.js";
+import { telegramNotifyNodeDefinition } from "../src/nodes/tools/telegram-notify.js";
 
 describe("Phase 8: AI Automation, Guardrails & Controlled Tools Tests", () => {
   before(() => {
@@ -360,6 +361,35 @@ describe("Phase 8: AI Automation, Guardrails & Controlled Tools Tests", () => {
       assert.equal(capturedBody.chat_id, "12345");
       assert.equal(capturedBody.text, "Digest for today: Next.js 15");
       assert.deepEqual(summary.context.nodeOutputs["tg"], { sentMessageId: 42 });
+    });
+
+    it("includes six carousel prompts with cover delivery", async () => {
+      const requests: Array<{ url: string; body: unknown }> = [];
+      globalThis.fetch = (async (url: string, init?: RequestInit) => {
+        requests.push({
+          url,
+          body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body,
+        });
+        return { ok: true, json: async () => ({ ok: true, result: { message_id: 42 } }) } as any;
+      }) as any;
+
+      const prompts = Array.from({ length: 6 }, (_, index) => `Carousel slide ${index + 1} prompt`);
+      const result = await telegramNotifyNodeDefinition.handler.execute({
+        nodeId: "tg",
+        config: { botToken: "test_token", chatId: "12345" },
+        input: {
+          generate_cover: { base64Image: Buffer.from("cover").toString("base64") },
+          generate_blueprint: { telegram_package_markdown: "Cover ready", carousel_prompts: prompts },
+        },
+        context: { executionId: "test", workflowId: "test", startedAt: new Date().toISOString(), nodeOutputs: {} },
+      });
+
+      assert.equal(result.success, true);
+      const message = requests.find((request) => request.url.includes("/sendMessage"));
+      assert.ok(message);
+      const body = message.body as { text: string };
+      assert.match(body.text, /Prompt Carousel/);
+      for (const prompt of prompts) assert.match(body.text, new RegExp(prompt));
     });
 
     it("fails cleanly when botToken is missing", async () => {
